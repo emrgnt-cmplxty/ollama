@@ -1037,6 +1037,7 @@ func (s *Server) GenerateRoutes() http.Handler {
 	r.POST("/api/blobs/:digest", s.CreateBlobHandler)
 	r.HEAD("/api/blobs/:digest", s.HeadBlobHandler)
 	r.GET("/api/ps", s.ProcessHandler)
+	r.GET("/api/config", s.ConfigHandler)
 
 	// Compatibility endpoints
 	r.POST("/v1/chat/completions", openai.Middleware(), s.ChatHandler)
@@ -1450,4 +1451,8 @@ func handleErrorResponse(c *gin.Context, err error) {
 		return
 	}
 	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+}
+
+func (s *Server) ConfigHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, api.ServerConfig{ModelDir: envconfig.ModelsDir})
 }
