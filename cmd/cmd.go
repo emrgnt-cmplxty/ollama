@@ -75,7 +75,7 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	status := "transferring model data"
+	status := ""
 	spinner := progress.NewSpinner(status)
 	p.Add(status, spinner)
 
@@ -111,7 +111,7 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 
 				path = tempfile
 			}
-
+			spinner.Stop()
 			digest, err := createBlob(cmd, client, path)
 			if err != nil {
 				return err
@@ -270,6 +270,13 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string) (string, er
 	}
 	defer bin.Close()
 
+	// Get file info to retrieve the size
+	fileInfo, err := bin.Stat()
+	if err != nil {
+		return "", err
+	}
+	fileSize := fileInfo.Size()
+
 	hash := sha256.New()
 	if _, err := io.Copy(hash, bin); err != nil {
 		return "", err
@@ -279,11 +286,43 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string) (string, er
 		return "", err
 	}
 
+	var pw progressWriter
+	// Create a progress bar and start a goroutine to update it
+	p := progress.NewProgress(os.Stderr)
+	bar := progress.NewBar("transferring model data...", fileSize, 0)
+	p.Add("", bar)
+
+	ticker := time.NewTicker(60 * time.Millisecond)
+	done := make(chan struct{})
+	defer p.Stop()
+
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				bar.Set(pw.n)
+			case <-done:
+				bar.Set(fileSize)
+				return
+			}
+		}
+	}()
+
 	digest := fmt.Sprintf("sha256:%x", hash.Sum(nil))
-	if err = client.CreateBlob(cmd.Context(), digest, bin); err != nil {
+	if err = client.CreateBlob(cmd.Context(), digest, io.TeeReader(bin, &pw)); err != nil {
 		return "", err
 	}
 	return digest, nil
+}
+
+type progressWriter struct {
+	n int64
+}
+
+func (w *progressWriter) Write(p []byte) (n int, err error) {
+	w.n += int64(len(p))
+	return len(p), nil
 }
 
 func RunHandler(cmd *cobra.Command, args []string) error {
