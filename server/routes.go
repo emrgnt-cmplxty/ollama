@@ -1,13 +1,16 @@
 package server
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"log/slog"
 	"math"
 	"net"
@@ -24,8 +27,10 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/ollama/ollama/api"
+	"github.com/ollama/ollama/auth"
 	"github.com/ollama/ollama/envconfig"
 	"github.com/ollama/ollama/gpu"
 	"github.com/ollama/ollama/llm"
@@ -911,7 +916,6 @@ func (s *Server) CreateBlobHandler(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	_, err = os.Stat(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -921,6 +925,14 @@ func (s *Server) CreateBlobHandler(c *gin.Context) {
 		return
 	default:
 		c.Status(http.StatusOK)
+		return
+	}
+	fmt.Println("hello")
+	fmt.Println(s.IsLocal(c))
+	if c.GetHeader("X-Redirect-Create") == "1" && s.IsLocal(c) {
+		fmt.Println("entered redirect")
+		c.Header("LocalLocation", path)
+		c.Status(http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -936,6 +948,83 @@ func (s *Server) CreateBlobHandler(c *gin.Context) {
 	}
 
 	c.Status(http.StatusCreated)
+}
+
+func (s *Server) IsLocal(c *gin.Context) bool {
+	fmt.Println("entered islocal")
+	fmt.Println(c.GetHeader("Authorization"), " is authorization")
+	if authz := c.GetHeader("Authorization"); authz != "" {
+
+		parts := strings.Split(authz, ":")
+		if len(parts) != 3 {
+			fmt.Println("failed at lenParts")
+			return false
+		}
+
+		clientPublicKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(fmt.Sprintf("ssh-ed25519 %s", parts[0])))
+		if err != nil {
+			fmt.Println("failed at parseAuthorizedKey")
+			return false
+		}
+
+		// partialRequestData is formatted as http.Method,http.requestURI,timestamp,nonce
+		requestData, err := base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			fmt.Println("failed at decodeString")
+			return false
+		}
+
+		partialRequestDataParts := strings.Split(string(requestData), ",")
+		if len(partialRequestDataParts) != 3 {
+			fmt.Println("failed at lenPartialRequestDataParts")
+			return false
+		}
+
+		/* timestamp, err := strconv.ParseInt(partialRequestDataParts[2], 10, 0)
+		if err != nil {
+			return false
+		}
+
+		t := time.Unix(timestamp, 0)
+		if time.Since(t) > 5*time.Minute || time.Until(t) > 5*time.Minute {
+			// token is invalid if timestamp +/- 5 minutes from current time
+			return false
+		} */
+
+		/* nonce := partialRequestDataParts[3]
+		if nonceCache.has(nonce) {
+			return false
+		}
+		nonceCache.add(nonce, 5*time.Minute) */
+
+		signature, err := base64.StdEncoding.DecodeString(parts[2])
+		if err != nil {
+			fmt.Println("failed at decodeString stdEncoding")
+			return false
+		}
+
+		if err := clientPublicKey.Verify([]byte(requestData), &ssh.Signature{Format: clientPublicKey.Type(), Blob: signature}); err != nil {
+			fmt.Println("failed at verify")
+			fmt.Println(err)
+			return false
+		}
+
+		serverPublicKey, err := auth.GetPublicKey()
+		if err != nil {
+			fmt.Println("failed at getPublicKey")
+			log.Fatal(err)
+		}
+
+		if bytes.Equal(serverPublicKey.Marshal(), clientPublicKey.Marshal()) {
+			fmt.Println("true")
+			return true
+		}
+
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return false
+	}
+
+	return false
 }
 
 func isLocalIP(ip netip.Addr) bool {

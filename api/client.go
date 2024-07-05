@@ -17,14 +17,20 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 
+	"github.com/ollama/ollama/auth"
 	"github.com/ollama/ollama/envconfig"
 	"github.com/ollama/ollama/format"
 	"github.com/ollama/ollama/version"
@@ -373,4 +379,49 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 	}
 
 	return version.Version, nil
+}
+
+// IsLocal checks whether the client is connecting to a local server.
+func (c *Client) IsLocal() bool {
+	// Resolve the host to an IP address and check if the IP is local
+	// Currently, only checks if it is localhost or loopback
+	host, _, err := net.SplitHostPort(c.base.Host)
+	if err != nil {
+		host = c.base.Host
+	}
+
+	if host == "" || host == "localhost" {
+		return true
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+
+	return false
+}
+
+func Authorization(ctx context.Context, request *http.Request) (string, error) {
+
+	data := []byte(fmt.Sprintf("%s,%s,%d", request.Method, request.URL.RequestURI(), time.Now().Unix()))
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	knownHostsFile, err := os.OpenFile(filepath.Join(home, ".ollama", "known_hosts"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
+	if err != nil {
+		return "", err
+	}
+	defer knownHostsFile.Close()
+
+	token, err := auth.Sign(ctx, data)
+	if err != nil {
+		return "", err
+	}
+
+	// interleave request data into the token
+	key, sig, _ := strings.Cut(token, ":")
+	return fmt.Sprintf("%s:%s:%s", key, base64.StdEncoding.EncodeToString(data), sig), nil
 }
