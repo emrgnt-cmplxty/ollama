@@ -318,32 +318,6 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, spinner *pr
 
 	digest := fmt.Sprintf("sha256:%x", hash.Sum(nil))
 
-	// Here, we want to check if the server is local
-	// If true, call, createBlobLocal
-	// This should find the model directory, copy blob over, and return the digest
-	// If this fails, just upload it
-	// If this is successful, return the digest
-
-	// Resolve server to IP
-	// Check if server is local
-	/* if client.IsLocal() {
-		digest = strings.ReplaceAll(digest, ":", "-")
-		config, err := client.HeadBlob(cmd.Context(), digest)
-		if err != nil {
-			return "", err
-		}
-
-		modelDir := config.ModelDir
-
-		// Get blob destination
-
-		dest := filepath.Join(modelDir, "blobs", digest)
-
-		err = createBlobLocal(path, dest)
-		if err == nil {
-			return digest, nil
-		}
-	} */
 	if client.IsLocal() {
 		dest, err := getLocalPath(cmd.Context(), digest)
 
@@ -364,7 +338,7 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, spinner *pr
 		}
 	}
 
-	if err = client.CreateBlob(cmd.Context(), digest, bin); err != nil {
+	if err = client.CreateBlob(cmd.Context(), digest, io.TeeReader(bin, &pw)); err != nil {
 		return "", err
 	}
 	return digest, nil
