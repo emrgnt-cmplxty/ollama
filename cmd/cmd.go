@@ -77,7 +77,7 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	status := "starting model create..."
+	status := "transferring model data..."
 	spinner := progress.NewSpinner(status)
 	p.Add(status, spinner)
 	defer p.Stop()
@@ -120,7 +120,7 @@ func CreateHandler(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			spinner.SetMessage("transferring model data 100%")
+			spinner.SetMessage("transferring model data done")
 
 			modelfile.Commands[i].Args = "@" + digest
 		}
@@ -310,7 +310,7 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, spinner *pr
 			case <-ticker.C:
 				spinner.SetMessage(fmt.Sprintf("transferring model data %d%%", int(100*pw.n/fileSize)))
 			case <-done:
-				spinner.SetMessage(fmt.Sprintf("transferring model data %d%%", 100))
+				spinner.SetMessage(fmt.Sprintf("transferring model data done"))
 				return
 			}
 		}
@@ -318,7 +318,7 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, spinner *pr
 
 	digest := fmt.Sprintf("sha256:%x", hash.Sum(nil))
 
-	if client.IsLocal() {
+	/* if client.IsLocal() {
 		dest, err := getLocalPath(cmd.Context(), digest)
 
 		if errors.Is(err, ErrBlobExists) {
@@ -336,7 +336,7 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, spinner *pr
 				return digest, nil
 			}
 		}
-	}
+	} */
 
 	if err = client.CreateBlob(cmd.Context(), digest, io.TeeReader(bin, &pw)); err != nil {
 		return "", err
