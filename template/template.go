@@ -21,6 +21,7 @@ import (
 var indexBytes []byte
 
 //go:embed *.gotmpl
+//go:embed *.json
 var templatesFS embed.FS
 
 var templatesOnce = sync.OnceValues(func() ([]*named, error) {
@@ -37,6 +38,15 @@ var templatesOnce = sync.OnceValues(func() ([]*named, error) {
 
 		// normalize line endings
 		t.Bytes = bytes.ReplaceAll(bts, []byte("\r\n"), []byte("\n"))
+
+		params, err := templatesFS.ReadFile(t.Name + ".json")
+		if err != nil {
+			continue
+		}
+
+		if err := json.Unmarshal(params, &t.Parameters); err != nil {
+			return nil, err
+		}
 	}
 
 	return templates, nil
@@ -46,6 +56,10 @@ type named struct {
 	Name     string `json:"name"`
 	Template string `json:"template"`
 	Bytes    []byte
+
+	Parameters *struct {
+		Stop []string `json:"stop"`
+	}
 }
 
 func (t named) Reader() io.Reader {
