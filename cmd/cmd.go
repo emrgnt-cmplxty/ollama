@@ -291,11 +291,6 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, spinner *pr
 
 	var pw progressWriter
 	// Create a progress bar and start a goroutine to update it
-	// JK Let's use a percentage
-
-	//bar := progress.NewBar("transferring model data...", fileSize, 0)
-	//p.Add("transferring model data", bar)
-
 	status := "transferring model data 0%"
 	spinner.SetMessage(status)
 
@@ -310,7 +305,7 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, spinner *pr
 			case <-ticker.C:
 				spinner.SetMessage(fmt.Sprintf("transferring model data %d%%", int(100*pw.n/fileSize)))
 			case <-done:
-				spinner.SetMessage(fmt.Sprintf("transferring model data done"))
+				spinner.SetMessage("transferring model data done")
 				return
 			}
 		}
@@ -318,26 +313,33 @@ func createBlob(cmd *cobra.Command, client *api.Client, path string, spinner *pr
 
 	digest := fmt.Sprintf("sha256:%x", hash.Sum(nil))
 
-	/* if client.IsLocal() {
-		dest, err := getLocalPath(cmd.Context(), digest)
+	// We check if we can find the models directory locally
+	// If we can, we return the path to the directory
+	// If we can't, we return an error
+	// If the blob exists already, we return the digest
+	/*dest, err := getLocalPath(cmd.Context(), digest)
 
-		if errors.Is(err, ErrBlobExists) {
+	if errors.Is(err, ErrBlobExists) {
+		return digest, nil
+	}
+
+	// Successfully found the model directory
+	if err == nil {
+		// Copy blob in via OS specific copy
+		// Linux errors out to use io.copy
+		err = localCopy(path, dest)
+		if err == nil {
 			return digest, nil
 		}
-
-		if err == nil {
-			err = localCopy(path, dest)
-			if err == nil {
-				return digest, nil
-			}
 
 			err = defaultCopy(path, dest)
 			if err == nil {
 				return digest, nil
 			}
 		}
-	} */
+	}*/
 
+	// If at any point copying the blob over locally fails, we default to the copy through the server
 	if err = client.CreateBlob(cmd.Context(), digest, io.TeeReader(bin, &pw)); err != nil {
 		return "", err
 	}
